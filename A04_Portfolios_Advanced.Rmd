@@ -17,7 +17,7 @@ For all exercises: Please use the Assignment-Forum to post your questions, I wil
 
 Have a look at `vignette("ROI_vignette")` and the `optimize.portfolio.rebalancing` command. Use your dataset to compute 
 
-a) Mean-Return
+a) Mean-Return (tangency portfolio)
 b) Minimum-Variance
 c) Maximum Quadratic Utility Portfolios
 
@@ -25,7 +25,7 @@ checking for a variety of constraints (constraints that can be computed with the
 
 ## Exercise 2: Custom moments function
 
-Check `vignette("custom_moments_objectives")` to implement a variety of robust covariance matrix estimates (see `?MASS::cov.rob`, `?PerformanceAnalytics::ShrinkageMoments` and maybe `?PerformanceAnalytics::EWMAMoments` - the latter one only for backtesting) for the minimum variance and quadratic utility portfolios. Plot the different Efficient frontiers, optimal portfolios and weights and visualize the different covariances. Also make yourselves comfortable with cleaning outliers from your timeseroies via `return.Clean()`.
+Check `vignette("custom_moments_objectives")` to implement a variety of robust covariance matrix estimates (see `?MASS::cov.rob`, `?PerformanceAnalytics::ShrinkageMoments` and maybe `?PerformanceAnalytics::EWMAMoments` - the latter one only for backtesting) for the minimum variance and quadratic utility portfolios. Plot the different Efficient frontiers, optimal portfolios and weights and visualize the different covariances. Also make yourselves comfortable with cleaning outliers from your timeseries via `return.Clean()`.
 
 ## Exercise 3: Regime Switching
 
