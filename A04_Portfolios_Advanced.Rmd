@@ -1,0 +1,42 @@
+---
+title: "Portfoliomanagement and Financial Analysis - Assignment 4"
+subtitle: "Submit until Monday 2019-10-07, 13:00"
+author: "Lastname, Surname"
+output: html_notebook
+---
+
+```{r load_packs}
+pacman::p_load(tidyverse,tidyquant,PortfolioAnalytics,nloptr)
+```
+
+**Please** remember to put your assignment solutions in `rmd` format using **many** chunks and putting readable text in between, similar to my examples given in Research Methods and Assignment 1! Also, each student has to select his own set of 10 stocks having data available as of `2000-01-01`. Select by Sharpe-ratio, dominance or any other method (e.g. matching your first name).
+
+For all exercises: Please use the Assignment-Forum to post your questions, I will try my best to help you along!
+
+## Exercise 1: Rebalancing
+
+Have a look at `vignette("ROI_vignette")` and the `optimize.portfolio.rebalancing` command. Use your dataset to compute 
+
+a) Mean-Return
+b) Minimum-Variance
+c) Maximum Quadratic Utility Portfolios
+
+checking for a variety of constraints (constraints that can be computed with the `ROI`-solver) and different rebalancing periods (as well as rolling windows/training periods) to find, what might deliver you the best portfolios performance (use appropriate statistics to decide on that).
+
+## Exercise 2: Custom moments function
+
+Check `vignette("custom_moments_objectives")` to implement a variety of robust covariance matrix estimates (see `?MASS::cov.rob`, `?PerformanceAnalytics::ShrinkageMoments` and maybe `?PerformanceAnalytics::EWMAMoments` - the latter one only for backtesting) for the minimum variance and quadratic utility portfolios. Plot the different Efficient frontiers, optimal portfolios and weights and visualize the different covariances. Also make yourselves comfortable with cleaning outliers from your timeseroies via `return.Clean()`.
+
+## Exercise 3: Regime Switching
+
+Have a look at `demo(regime_switching)` and estimate and rebalance portfolios based on 2/3 regimes. Can you plot the regimes over time?
+
+## Exercise 4: Single Index-Model
+
+Now we are going to estimate the Portfolio Input Parameters with the Single-Index Model. Use your ten assets and additionally choose the S&P500 as index (same returns etc).
+
+a) Regress all stocks on the index. Show alpha, beta and residual variance. Calculate systematic and firm-specific risk. Are there any significant alphas? (You should double check with the appropriate `PerformanceAnalytics` Functions)
+b) Extract the betas and calculate systematic and unsystematic risk, derive the whole covariance matrix. To do this you can use _CH15_Factor_Modfels_for_Asset_Returns.pdf (15.3.1)_ and the code
+implemented in the function sharpeFactorEstimator that you find [here](http://financewithr.blogspot.com/2013/06/portfolio-optimization-using-single.html) (please do not just copy everything, but try to understand what you are doing, e.g. check why and if G.hat has the same values as found by the multivariate regression).
+c) Now use the _custom-moments_ functions from Exercise 2 to implement the single-factor model into the portfolio optimization framework and plot the efficient frontier using the parameters estimated by the single factor model next to the EF of the full-covariance model. Calculate MVP, TP etc. and work out the differences in weights, portfolio return and portfolio risk.
+
