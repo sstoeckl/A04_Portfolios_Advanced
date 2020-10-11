@@ -1,7 +1,7 @@
 ---
 title: "Portfoliomanagement and Financial Analysis - Assignment 4"
 subtitle: "Submit until Monday 2019-10-07, 13:00"
-author: "Lastname, Surname"
+author: "Köffel, Fabian"
 output: html_notebook
 ---
 
@@ -17,15 +17,648 @@ For all exercises: Please use the Assignment-Forum to post your questions, I wil
 
 Have a look at `vignette("ROI_vignette")` and the `optimize.portfolio.rebalancing` command. Use your dataset to compute 
 
-a) Mean-Return (tangency portfolio)
+a) Mean-Return (Tangency portfolio)
 b) Minimum-Variance
 c) Maximum Quadratic Utility Portfolios
 
 checking for a variety of constraints (constraints that can be computed with the `ROI`-solver) and different rebalancing periods (as well as rolling windows/training periods) to find, what might deliver you the best portfolios performance (use appropriate statistics to decide on that).
 
+```{r}
+library(timetk)
+
+SP500 <- tq_index("SP500")
+NASDAQ <- tq_exchange("NASDAQ")
+NYSE <- tq_exchange("NYSE") 
+
+stocks.selection <- SP500 %>% 
+  inner_join(rbind(NYSE,NASDAQ) %>% select(symbol,last.sale.price,market.cap,ipo.year),by=c("symbol")) %>%
+  filter(ipo.year<2000&!is.na(market.cap)) %>% 
+  arrange(desc(weight)) %>% 
+  slice(1:10)
+
+stocks.selection
+```
+
+These are the returns of the selected stocks.
+
+```{r}
+stocks.returns <- stocks.selection$symbol %>%
+    tq_get(get  = "stock.prices",
+           from = "2000-01-01",
+           to   = "2019-12-31") %>%
+    group_by(symbol) %>%
+    tq_transmute(select     = adjusted, 
+                 mutate_fun = periodReturn, 
+                 period     = "monthly")
+
+stocks.returns
+```
+
+Stock returns as time series
+````{r}
+stocks.returns.xts <- stocks.returns%>%
+                      subset( select = c(symbol,date, monthly.returns)) %>% 
+                      pivot_wider(names_from = symbol, 
+                                  values_from = monthly.returns) %>% 
+                      tk_xts(date_var = date, silent = TRUE)
+
+stocks.returns.xts
+```
+
+1A
+
+Create portfolio object, add constraints, add objective
+```{r}
+portf_maxret <- portfolio.spec(assets=stocks.selection$symbol)%>%
+  add.constraint(type="full_investment") %>%
+  add.constraint(type="long_only") %>%
+  add.objective(type="return", name="mean")
+
+portf_maxret
+```
+
+Run the optimization
+```{r}
+opt_maxret <- optimize.portfolio(R=stocks.returns.xts, portfolio=portf_maxret,
+                                 optimize_method="ROI", trace=TRUE)
+opt_maxret
+```
+
+```{r}
+ plot(opt_maxret, chart.assets=TRUE, main="Maximum Return", 
+      xlim=c(0.05, 0.35), ylim=c(0,0.04))
+
+```
+
+```{r}
+chart.RiskReward(opt_maxret,return.col="mean", risk.col="sd",
+                 chart.assets=TRUE, 
+                 xlim=c(0.05, 0.25),
+                 main="Maximum Return")
+```
+
+```{r}
+maxret.ef <- create.EfficientFrontier(R=stocks.returns.xts, 
+                                       portfolio=portf_maxret, 
+                                       type="mean-StdDev")
+
+chart.EfficientFrontier(maxret.ef, match.col="StdDev", type="l")
+```
+
+Backtesting:  Quarterly rebalancing with 5 year training period
+```{r}
+bt_maxret <- optimize.portfolio.rebalancing(R=stocks.returns.xts, 
+                                            portfolio=portf_maxret,
+                                            optimize_method="ROI",
+                                            rebalance_on="quarters",
+                                            training_period=60)
+bt_maxret 
+```
+
+Backtesting:  Quarterly rebalancing with 5 year training period and 4 year rolling window
+```{r}
+bt_maxret2 <- optimize.portfolio.rebalancing(R=stocks.returns.xts, 
+                                            portfolio=portf_maxret,
+                                            optimize_method="ROI",
+                                            rebalance_on="quarters",
+                                            training_period= 60,
+                                            rolling_window = 48)
+bt_maxret2
+```
+
+
+1B
+
+Create portfolio object, add constraint, add objective
+```{r}
+portf_minvar <- portfolio.spec(assets= stocks.selection$symbol) %>%
+  add.constraint(type="full_investment") %>%
+  add.constraint(type = "long_only") %>%
+  add.objective(type="risk", name="var")
+  
+portf_minvar
+```
+
+Run the optimization
+```{r}
+opt_minvar <- optimize.portfolio(R = stocks.returns.xts,portfolio = portf_minvar,
+                              optimize_method = "ROI", trace = TRUE)
+
+opt_minvar
+```
+
+Plotting weights
+```{r}
+plot(opt_minvar, chart.assets=TRUE, main="Minimum Variance", 
+      xlim=c(0.05, 0.35), ylim=c(0,0.05))
+```
+
+```{r}
+chart.RiskReward(opt_minvar,return.col="mean", risk.col="sd",
+                 chart.assets=TRUE, 
+                 xlim=c(0.05, 0.25),
+                 main="Minimum Variance")
+```
+
+Backtesting: Quarterly rebalancing with 5 year training period
+```{r}
+bt_minvar <- optimize.portfolio.rebalancing(R=stocks.returns.xts, 
+                                            portfolio=portf_minvar,
+                                            optimize_method="ROI",
+                                            rebalance_on="quarters",
+                                            training_period=60)
+bt_minvar
+```
+
+Backtesting: Quarterly rebalancing with 5 year training period and 4 year rolling window
+```{r}
+bt_minvar2 <- optimize.portfolio.rebalancing(R=stocks.returns.xts, 
+                                            portfolio=portf_minvar,
+                                            optimize_method="ROI",
+                                            rebalance_on="quarters",
+                                            training_period=60,
+                                            rolling_window = 48)
+bt_minvar2
+```
+1C
+
+```{r}
+portf_maxqua <- portfolio.spec(assets= stocks.selection$symbol) %>%
+  add.constraint(type = "full_investment") %>%
+  add.constraint(type = "long_only")
+portf_maxqua
+```
+
+Create return objective, risk aversion objective and combine
+```{r}
+ret_obj <- return_objective(name="mean")
+
+var_obj <- portfolio_risk_objective(name="var", risk_aversion=1)
+
+qu_obj <- list(ret_obj, var_obj)
+
+qu_obj
+```
+
+Run the optimization
+```{r}
+opt_qu <- optimize.portfolio(R=stocks.returns.xts, portfolio=portf_maxqua,
+                             objectives=qu_obj,
+                             optimize_method="ROI",
+                             trace=TRUE)
+opt_qu
+```
+
+```{r}
+plot(opt_qu, chart.assets=TRUE, main="Maximum Quadratic Utility", 
+      xlim=c(0, 0.35), ylim=c(0,0.05))
+```
+
+```{r}
+chart.RiskReward(opt_qu,return.col="mean", risk.col="sd",
+                 chart.assets=TRUE, 
+                 xlim=c(0.05, 0.25),
+                 main="Maximum Quadratic Utility")
+```
+
+Backtesting: Quarterly rebalancing with 5 year training period
+```{r}
+bt_qu <- optimize.portfolio.rebalancing(R=stocks.returns.xts, portfolio=portf_maxqua,
+                                        objectives=qu_obj,
+                                        optimize_method="ROI",
+                                        rebalance_on="quarters",
+                                        training_period=60)
+bt_qu
+```
+
+
+Backtesting: Quarterly rebalancing with 5 year training period
+```{r}
+bt_qu2 <- optimize.portfolio.rebalancing(R=stocks.returns.xts, portfolio=portf_maxqua,
+                                        objectives=qu_obj,
+                                        optimize_method="ROI",
+                                        rebalance_on="quarters",
+                                        training_period=60,
+                                        rolling_window = 48)
+bt_qu2
+```
+
+### With risk aversion = 5
+Create risk aversion objective and combine with return objective
+```{r}
+var_obj2 <- portfolio_risk_objective(name="var", risk_aversion=5)
+
+qu_obj2 <- list(ret_obj, var_obj2)
+
+qu_obj2
+```
+
+Run the optimization
+```{r}
+opt_qu2 <- optimize.portfolio(R=stocks.returns.xts, portfolio=portf_maxqua,
+                             objectives=qu_obj2,
+                             optimize_method="ROI",
+                             trace=TRUE)
+opt_qu2
+```
+
+```{r}
+plot(opt_qu2, chart.assets=TRUE, main="Maximum Quadratic Utility", 
+      xlim=c(0, 0.35), ylim=c(0,0.05))
+```
+
+
+```{r}
+chart.RiskReward(opt_qu2,return.col="mean", risk.col="sd",
+                 chart.assets=TRUE, 
+                 xlim=c(0.05, 0.25),
+                 main="Maximum Quadratic Utility")
+```
+
+Backtesting: Quarterly rebalancing with 5 year training period
+```{r}
+bt_qu3 <- optimize.portfolio.rebalancing(R=stocks.returns.xts, portfolio=portf_maxqua,
+                                        objectives=qu_obj2,
+                                        optimize_method="ROI",
+                                        rebalance_on="quarters",
+                                        training_period=60)
+bt_qu
+```
+
+
+Backtesting: Quarterly rebalancing with 5 year training period
+```{r}
+bt_qu4 <- optimize.portfolio.rebalancing(R=stocks.returns.xts, portfolio=portf_maxqua,
+                                        objectives=qu_obj2,
+                                        optimize_method="ROI",
+                                        rebalance_on="quarters",
+                                        training_period=60,
+                                        rolling_window = 48)
+bt_qu2
+```
+
+
+### Comparing Portfolio Performances with CAPM
+
+weights of the portfolios
+```{r}
+wts_maxret <- c(0, 0, 0, 1, 0, 0, 0, 0, 0, 0)
+wts_minvar <- c(0.0344, 0.0821, 0, 0, 0.006, 0, 0.2965, 0.0021, 0.5143, 0.0645)
+wts_qu <- c(0.5127, 0, 0.1358, 0.1965, 0.0693, 0, 0.0857, 0, 0, 0)
+wts_qu2 <- c(0.1738, 0.0173, 0.0047, 0.0217, 0.0706, 0, 0.3064, 0, 0.4055, 0)
+
+wts_maxret
+wts_minvar
+wts_qu 
+wts_qu2
+```
+
+Portfolio Returns
+```{r}
+stocks.returns
+
+portfolio.returns.maxret <- stocks.returns %>%
+    tq_portfolio(assets_col  = symbol, 
+                 returns_col = monthly.returns, 
+                 weights     = wts_maxret, 
+                 col_rename  = "Ra")
+
+portfolio.returns.maxret
+
+portfolio.returns.minvar <- stocks.returns %>%
+    tq_portfolio(assets_col  = symbol, 
+                 returns_col = monthly.returns, 
+                 weights     = wts_minvar, 
+                 col_rename  = "Ra")
+
+portfolio.returns.minvar
+
+portfolio.returns.qu <- stocks.returns %>%
+    tq_portfolio(assets_col  = symbol, 
+                 returns_col = monthly.returns, 
+                 weights     = wts_qu, 
+                 col_rename  = "Ra")
+
+portfolio.returns.qu
+
+portfolio.returns.qu2 <- stocks.returns %>%
+    tq_portfolio(assets_col  = symbol, 
+                 returns_col = monthly.returns, 
+                 weights     = wts_qu2, 
+                 col_rename  = "Ra")
+
+portfolio.returns.qu2
+```
+
+Baseline Returns S&P 500
+```{r}
+baseline.returns <- "^GSPC" %>%
+    tq_get(get  = "stock.prices",
+           from = "2000-01-01",
+           to   = "2019-12-31") %>%
+    tq_transmute(select     = adjusted, 
+                 mutate_fun = periodReturn, 
+                 period     = "monthly", 
+                 col_rename = "Rb")
+
+baseline.returns
+```
+
+
+Merging the datasets together to compute CAPM
+```{r}
+RaRb.maxret <- left_join(portfolio.returns.maxret, 
+                                   baseline.returns,
+                                   by = "date")
+
+RaRb.minvar <- left_join(portfolio.returns.minvar, 
+                                   baseline.returns,
+                                   by = "date")
+
+RaRb.qu <- left_join(portfolio.returns.qu, 
+                                   baseline.returns,
+                                   by = "date")
+
+RaRb.qu2 <- left_join(portfolio.returns.qu2, 
+                                   baseline.returns,
+                                   by = "date")
+
+RaRb.maxret
+RaRb.minvar
+RaRb.qu 
+RaRb.qu2 
+```
+
+CAPM MaxRet Portfolio
+```{r}
+RaRb.maxret %>%
+    tq_performance(Ra = Ra, Rb = Rb, 
+    performance_fun = table.CAPM)
+```
+
+
+CAPM MinVar Portfolio
+```{r}
+RaRb.minvar %>%
+    tq_performance(Ra = Ra, Rb = Rb, 
+    performance_fun = table.CAPM)
+```
+
+CAPM Quadratic Utility Portfolio risk_aversion=1
+```{r}
+RaRb.qu %>%
+    tq_performance(Ra = Ra, Rb = Rb, 
+    performance_fun = table.CAPM)
+```
+
+CAPM Quadratic Utility Portfolio risk_aversion=5
+```{r}
+RaRb.qu2 %>%
+    tq_performance(Ra = Ra, Rb = Rb, 
+    performance_fun = table.CAPM)
+```
+
+```{r}
+portfolio.returns.maxret %>%
+    ggplot(aes(x = date, y = Ra)) +
+    geom_bar(stat = "identity", fill = palette_light()[[1]]) +
+    labs(title = "MaxRet Portfolio Returns",
+         x = "", y = "Monthly Returns") +
+    geom_smooth(method = "lm") +
+    theme_tq() +
+    scale_color_tq() +
+    scale_y_continuous(labels = scales::percent)
+```
+
+```{r}
+portfolio.returns.minvar %>%
+    ggplot(aes(x = date, y = Ra)) +
+    geom_bar(stat = "identity", fill = palette_light()[[1]]) +
+    labs(title = "MinVar Portfolio Returns",
+         x = "", y = "Monthly Returns") +
+    geom_smooth(method = "lm") +
+    theme_tq() +
+    scale_color_tq() +
+    scale_y_continuous(labels = scales::percent)
+```
+
+```{r}
+portfolio.returns.qu %>%
+    ggplot(aes(x = date, y = Ra)) +
+    geom_bar(stat = "identity", fill = palette_light()[[1]]) +
+    labs(title = "Quadratic Utility Portfolio Returns (Riskaversion=1)",
+         x = "", y = "Monthly Returns") +
+    geom_smooth(method = "lm") +
+    theme_tq() +
+    scale_color_tq() +
+    scale_y_continuous(labels = scales::percent)
+```
+
+
+```{r}
+portfolio.returns.qu2 %>%
+    ggplot(aes(x = date, y = Ra)) +
+    geom_bar(stat = "identity", fill = palette_light()[[1]]) +
+    labs(title = "Quadratic Utility Portfolio Returns (Riskaversion=5)",
+         x = "", y = "Monthly Returns") +
+    geom_smooth(method = "lm") +
+    theme_tq() +
+    scale_color_tq() +
+    scale_y_continuous(labels = scales::percent)
+```
+
+
+
+
 ## Exercise 2: Custom moments function
 
 Check `vignette("custom_moments_objectives")` to implement a variety of robust covariance matrix estimates (see `?MASS::cov.rob`, `?PerformanceAnalytics::ShrinkageMoments` and maybe `?PerformanceAnalytics::EWMAMoments` - the latter one only for backtesting) for the minimum variance and quadratic utility portfolios. Plot the different Efficient frontiers, optimal portfolios and weights and visualize the different covariances. Also make yourselves comfortable with cleaning outliers from your timeseries via `return.Clean()`.
+
+```{r}
+require(timetk)
+
+stockselection <- c("MSFT", "AAPL", "PG", "HD", "YUM", "GOOGL", "F", "CSCO", "ADBE", "AMZN")
+stock.prices <- stockselection %>%
+  tq_get(get  = "stock.prices", from = "2000-01-01",to = "2018-08-31") %>%
+  group_by(symbol)
+
+stock.returns.monthly <- stock.prices %>%  
+  tq_transmute(select = adjusted,
+               mutate_fun = periodReturn,
+               period="monthly",
+               type="arithmetic",
+               col_rename = "Stock.returns"
+               )
+
+stock.returns.monthly
+
+```
+
+Now, we make 10 columns (each for every stock) with the simple returns from adjusted prices and convert to xts. The method "Return_Clean()" cleans the returns from outliers.
+
+```{r}
+stock.returns.monthly_xts_with_outliers <- pivot_wider(stock.returns.monthly,
+                                                names_from = symbol,
+                                                values_from = c(Stock.returns))%>% 
+  tk_xts(date_var = date, silent = TRUE)
+
+stock.returns.monthly_xts <- Return.clean(stock.returns.monthly_xts_with_outliers, method = "boudt", alpha = 0.01)
+options(max.print=60)
+stock.returns.monthly_xts
+
+```
+
+**Now, we create the initial minimum variance portfolio**
+
+In a first step, we require the necessary packages.
+Then, we construct the initial portfolio with basic constraints. We construct the portfolio in a way that R minimizes the standard deviation.
+
+Usually we want to invest our entire budget and therefore set type="full_investment" which sets the sum of weights to 1. Alternatively we can set the type="weight_sum" to have mimimum/maximum weight_sum equal to 1.
+
+```{r}
+require(PortfolioAnalytics)
+require(DEoptim)
+require(ROI)
+require(ROI.plugin.glpk)
+require(ROI.plugin.quadprog)
+
+# Construct initial portfolio with basic constraints.
+init.port.minv <- portfolio.spec(assets=colnames(stock.returns.monthly_xts),category_labels = stockselection)
+init.port.minv <- add.constraint(portfolio=init.port.minv, type="full_investment")
+init.port.minv <- add.constraint(portfolio=init.port.minv, type="long_only")
+
+#Portfolio with standard deviation as an objective
+SD.port.minv <- add.objective(portfolio=init.port.minv, type="risk", name="StdDev")
+#init.port.minv
+SD.port.minv
+```
+
+**Next, we create initial maximum quadratic utility portfolio. **
+
+We construct the initial quadratic utility portfolio with the basic constraints ( fullinvestment, long_only). 
+```{r}
+# Construct initial portfolio with basic constraints.
+init.port.maxq <- portfolio.spec(assets=colnames(stock.returns.monthly_xts),category_labels = stockselection)
+
+#init.port.maxq <- add.constraint(init.port.maxq, type = "box", min = 0, max = 1)
+init.port.maxq <- add.constraint(portfolio=init.port.maxq, type="full_investment")
+init.port.maxq <- add.constraint(portfolio=init.port.maxq, type="long_only")
+
+#Portfolio with standard deviation as an objective
+#SD.port.maxq <- add.objective(portfolio=init.port.maxq, type="return", name="mean")
+#SD.port.maxq <- add.objective(portfolio=SD.port.maxq, type="risk", name="var", risk_aversion=0.25)
+SD.port.maxq <- add.objective(portfolio=init.port.maxq, type="quadratic_utility", risk_aversion=0.25)
+
+SD.port.maxq
+```
+
+**function to estimate covariance matrix with cov.rob for minimum variance**
+
+Description of cov.rob
+
+Compute a multivariate location and scale estimate with a high breakdown point ñ this can be thought of as estimating the mean and covariance of the good part of the data. cov.mve and cov.mcd are compatibility wrappers.
+
+In method "mcd" it is the volume of the Gaussian confidence ellipsoid, equivalently the determinant of the classical covariance matrix, that is minimized. The mean of the subset provides a first estimate of the location, and the rescaled covariance matrix a first estimate of scatter. The Mahalanobis distances of all the points from the location estimate for this covariance matrix are calculated, and those points within the 97.5% point under Gaussian assumptions are declared to be good. The final estimates are the mean and rescaled covariance of the good points.
+
+
+```{r}
+
+sigma.robust <- function(R){
+    require(MASS)
+    out <- list()
+    out$sigmarob <- cov.rob(R, method="mcd")$cov
+    return(out)
+}
+
+sigmarob <- sigma.robust(stock.returns.monthly_xts)$sigmarob
+
+sigmarob
+```
+
+**function to estimate covariance matrix with ShrinkageMoments for minimum variance** 
+Definition of Shrinkeage
+Shrinkage is where extreme values in a sample are ìshrunkî towards a central value, like the sample mean.
+
+```{r}
+
+sigma.robust.shrink <- function(R){
+    targets <- c(1,3,4)
+    f <- rowSums(stock.returns.monthly_xts)
+    out <- list()
+    out$sigmashrink <- M2.shrink(stock.returns.monthly_xts, targets, f)$M2sh
+    return(out)
+}
+sigma.shrink <- sigma.robust.shrink(stock.returns.monthly_xts)$sigmashrink
+sigma.shrink
+```
+
+**Optimize portfolios**
+Now we can use the custom moment function in optimize.portfolio to estimate the solution
+to the minimum standard deviation portfolio.
+
+Here we extract the weights and compute the portfolio standard deviation to verify that the
+the robust estimate of the covariance matrix was used in the optimization.
+
+```{r message=FALSE, warning=FALSE}
+#portfolio moment "cov.rob"
+
+##minimum variance portfolio
+opt.sd.minv <- optimize.portfolio(stock.returns.monthly_xts, SD.port.minv, optimize_method="ROI", momentFUN="sigma.robust", trace = TRUE)
+
+##maximum quadratic utility portfolio
+opt.sd.maxq <- optimize.portfolio(stock.returns.monthly_xts, SD.port.maxq, optimize_method="ROI", momentFUN="sigma.robust", trace = TRUE)
+
+#portfolio moment "ShrinkeageMoments"
+
+##minimum variance portfolio
+opt.sd.minv.shrink <- optimize.portfolio(stock.returns.monthly_xts, SD.port.minv, optimize_method="ROI", momentFUN="sigma.robust.shrink", trace = TRUE)
+
+##maximum quadratic utility portfolio
+opt.sd.maxq.shrink <- optimize.portfolio(R=stock.returns.monthly_xts, portfolio=SD.port.maxq, optimize_method="ROI", momentFUN="sigma.robust.shrink", trace = TRUE)
+
+weights <- extractWeights(opt.sd.minv)
+sigmarob <- sigma.robust(stock.returns.monthly_xts)$sigmarob
+sqrt(t(weights) %*% sigmarob %*% weights)
+
+extractObjectiveMeasures(opt.sd.minv)$StdDev
+
+opt.sd.minv
+```
+**Plot the covariance matrix from cov.rob**
+```{r echo = FALSE}
+chart.Correlation(sigmarob, histogram = TRUE)
+
+```
+
+**Plot the covariance matrix from shrink**
+```{r echo = FALSE}
+chart.Correlation(sigma.shrink, histogram = TRUE)
+```
+**Plot the Portfolios**
+```{r}
+plot(opt.sd.minv, risk.col="StdDev", return.col="mean", main="Minimum Variance Optimization", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.02))
+
+
+plot(opt.sd.minv.shrink, risk.col="StdDev", return.col="mean", main="Minimum Variance Optimization shrink", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.02))
+
+plot(opt.sd.maxq, risk.col="StdDev", return.col="mean", main="Quadratic Utility Optimization", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.05))
+
+
+plot(opt.sd.maxq.shrink, risk.col="StdDev", return.col="mean", main="Quadratic Utility Optimization shrink", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.05))
+```
+**Chart Efficient Frontiert for the minimum variance Portfolio**
+```{r echo = FALSE}
+prt_eff_minv <- create.EfficientFrontier(R=stock.returns.monthly_xts, portfolio=SD.port.minv, type="mean-StdDev", match.col = "StdDev")
+
+chart.EfficientFrontier(prt_eff_minv, match.col="StdDev", type="b", rf=NULL, pch.assets = 1)
+chart.EF.Weights(prt_eff_minv, colorset=rainbow(n = length(stockselection)), match.col="StdDev", cex.lab = 1, main = "StdDev")
+```
+**Chart Efficient Frontiert for the quadratic utility Portfolio**
+```{r echo = FALSE}
+prt_eff_maxq <- create.EfficientFrontier(R=stock.returns.monthly_xts, portfolio=SD.port.maxq, type="mean-StdDev", match.col = "StdDev")
+chart.EfficientFrontier(prt_eff_maxq, match.col="StdDev", type="b", rf=NULL, pch.assets = 1)
+chart.EF.Weights(prt_eff_maxq, colorset=rainbow(n = length(stockselection)), match.col="StdDev", cex.lab = 1, main = "StdDev")
+```
 
 ## Exercise 3: Regime Switching
 
