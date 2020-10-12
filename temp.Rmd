@@ -1,0 +1,432 @@
+---
+title: "Portfoliomanagement and Financial Analysis - Assignment 4"
+subtitle: "Submit until Monday 2019-10-07, 13:00"
+author: "Lastname, Surname"
+output: html_notebook
+---
+
+```{r load_packs}
+pacman::p_load(tidyverse,tidyquant,PortfolioAnalytics,nloptr,tsibble,matrixcalc,Matrix,timetk,xts)
+
+```
+
+**Please** remember to put your assignment solutions in `rmd` format using **many** chunks and putting readable text in between, similar to my examples given in Research Methods and Assignment 1! Also, each student has to select his own set of 10 stocks having data available as of `2000-01-01`. Select by Sharpe-ratio, dominance or any other method (e.g. matching your first name).
+
+*For all exercises: Please use the Assignment-Forum to post your questions, I will try my best to help you along!*
+
+## Exercise 2: Custom moments function
+
+Check `vignette("custom_moments_objectives")` to implement a variety of robust covariance matrix estimates (see `?MASS::cov.rob`, `?PerformanceAnalytics::ShrinkageMoments` and maybe `?PerformanceAnalytics::EWMAMoments` - the latter one only for backtesting) for the minimum variance and quadratic utility portfolios. Plot the different Efficient frontiers, optimal portfolios and weights and visualize the different covariances. Also make yourselves comfortable with cleaning outliers from your timeseroies via `return.Clean()`.
+
+**Get Data of 10 Stocks**
+```{r warning=FALSE, message=FALSE}
+require(timetk)
+#Created a vector with the stocks I want to observe
+stockselection <- c("AAPL", "MSFT", "AMZN", "PFE", "JPM", "CSCO", "XOM", "BAC", "NKE", "WMT")
+
+
+#Get the prices of the stocks to transmute it to returns
+stock.prices <- stockselection %>%
+  tq_get(get  = "stock.prices", from = "2000-01-01",to = "2018-08-31") %>%
+  group_by(symbol)
+
+#Create monthly returns
+stock.returns.monthly <- stock.prices %>%  
+  tq_transmute(select = adjusted,
+               mutate_fun = periodReturn,
+               period="monthly",
+               type="arithmetic",
+               col_rename = "Stock.returns"
+               )
+
+#Make 10 columns (each for every stock) with the simple returns from adjusted prices and convert to xts
+
+
+stock.returns.monthly_xts_withoutliners <- pivot_wider(stock.returns.monthly,
+                                                names_from = symbol,
+                                                values_from = c(Stock.returns))%>% 
+  tk_xts(date_var = date, silent = TRUE)
+
+stock.returns.monthly_xts <- Return.clean(stock.returns.monthly_xts_withoutliners, method = "boudt", alpha = 0.01)
+```
+
+**create initial minimum variance portfolio**
+```{r}
+library(PortfolioAnalytics)
+library(DEoptim)
+library(ROI)
+require(ROI.plugin.glpk)
+require(ROI.plugin.quadprog)
+
+# Construct initial portfolio with basic constraints.
+init.port.minv <- portfolio.spec(assets=colnames(stock.returns.monthly_xts),category_labels = stockselection)
+init.port.minv <- add.constraint(portfolio=init.port.minv, type="full_investment")
+#init.port.minv <- add.constraint(portfolio=init.port.minv, type="long_only")
+
+#Portfolio with standard deviation as an objective
+SD.port.minv <- add.objective(portfolio=init.port.minv, type="risk", name="StdDev")
+
+
+```
+
+**create initial maximize quadratic utility portfolio**
+```{r}
+# Construct initial portfolio with basic constraints.
+init.port.maxq <- portfolio.spec(assets=colnames(stock.returns.monthly_xts),category_labels = stockselection)
+
+#init.port.maxq <- add.constraint(init.port.maxq, type = "box", min = 0, max = 1)
+init.port.maxq <- add.constraint(portfolio=init.port.maxq, type="full_investment")
+init.port.maxq <- add.constraint(portfolio=init.port.maxq, type="long_only")
+
+#Portfolio with standard deviation as an objective
+SD.port.maxq <- add.objective(portfolio=init.port.maxq, type="return", name="mean")
+SD.port.maxq <- add.objective(portfolio=SD.port.maxq, type="risk", name="var", risk_aversion=0.25)
+
+
+
+```
+
+
+**function to estimate covariance matrix with cov.rob for minimum variance**
+```{r}
+sigma.robust <- function(R){
+    require(MASS)
+    out <- list()
+    out$sigmarob <- cov.rob(R, method="mcd")$cov
+    return(out)
+}
+
+sigmarob <- sigma.robust(stock.returns.monthly_xts)$sigmarob
+```
+
+**function to estimate covariance matrix with ShrinkageMoments for minimum variance** 
+```{r}
+
+sigma.robust.shrink <- function(R){
+    targets <- c(1,3,4)
+    f <- rowSums(stock.returns.monthly_xts)
+    out <- list()
+    out$sigmashrink <- M2.shrink(stock.returns.monthly_xts, targets, f)$M2sh
+    return(out)
+}
+
+
+sigma.shrink <- sigma.robust.shrink(stock.returns.monthly_xts)$sigmashrink
+```
+
+**Optimize portfolios**
+```{r message=FALSE, warning=FALSE}
+
+opt.sd.minv <- optimize.portfolio(stock.returns.monthly_xts, SD.port.minv, optimize_method="ROI", momentFUN="sigma.robust", trace = TRUE)
+
+opt.sd.maxq <- optimize.portfolio(stock.returns.monthly_xts, SD.port.maxq, optimize_method="ROI", momentFUN="sigma.robust", trace = TRUE)
+
+opt.sd.minv.shrink <- optimize.portfolio(stock.returns.monthly_xts, SD.port.minv, optimize_method="ROI", momentFUN="sigma.robust.shrink", trace = TRUE)
+
+opt.sd.maxq.shrink <- optimize.portfolio(R=stock.returns.monthly_xts, portfolio=SD.port.maxq, optimize_method="ROI", momentFUN="sigma.robust.shrink", trace = TRUE)
+
+
+weights <- extractWeights(opt.sd.minv)
+sigmarob <- sigma.robust(stock.returns.monthly_xts)$sigmarob
+sqrt(t(weights) %*% sigmarob %*% weights)
+
+#extractObjectiveMeasures(opt.sd)$StdDev
+
+```
+
+
+**Plot the covariance matrix from cov.rob**
+```{r echo = FALSE}
+chart.Correlation(sigmarob, histogram = TRUE)
+
+```
+
+**Plot the covariance matrix from shrink**
+```{r}
+chart.Correlation(sigma.shrink, histogram = TRUE)
+```
+
+**Plot the Portfolios**
+```{r echo = FALSE}
+plot(opt.sd.minv, risk.col="StdDev", return.col="mean", main="Minimum Variance Optimization", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.02))
+
+
+plot(opt.sd.minv.shrink, risk.col="StdDev", return.col="mean", main="Minimum Variance Optimization shrink", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.02))
+
+plot(opt.sd.maxq, risk.col="StdDev", return.col="mean", main="Quadratic Utility Optimization", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.05))
+
+
+plot(opt.sd.maxq.shrink, risk.col="StdDev", return.col="mean", main="Quadratic Utility Optimization shrink", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.05))
+```
+
+**Chart Efficient Frontiert for the minimum variance Portfolio**
+```{r echo = FALSE}
+prt_eff_minv <- create.EfficientFrontier(R=stock.returns.monthly_xts, portfolio=SD.port.minv, type="mean-StdDev", match.col = "StdDev")
+chart.EfficientFrontier(prt_eff_minv, match.col="StdDev", type="b", rf=NULL, pch.assets = 1)
+chart.EF.Weights(prt_eff_minv, colorset=rainbow(n = length(stockselection)), match.col="StdDev", cex.lab = 1, main = "StdDev")
+```
+
+
+**Chart Efficient Frontiert for the quadratic utility Portfolio**
+```{r echo = FALSE}
+prt_eff_maxq <- create.EfficientFrontier(R=stock.returns.monthly_xts, portfolio=SD.port.maxq, type="mean-StdDev", match.col = "StdDev")
+chart.EfficientFrontier(prt_eff_maxq, match.col="StdDev", type="b", rf=NULL, pch.assets = 1)
+chart.EF.Weights(prt_eff_maxq, colorset=rainbow(n = length(stockselection)), match.col="StdDev", cex.lab = 1, main = "StdDev")
+```
+
+Exercise 3: Regime Switching
+#Have a look at `demo(regime_switching)` and estimate and rebalance portfolios based on 2/3 regimes. Can you plot the regimes over time?
+
+
+```{r}
+demo(regime_switching)
+```
+
+
+```{r}
+#' Load package and data.
+library(PortfolioAnalytics)
+```
+
+
+```{r}
+# get monthly stock returns from the S&P500
+monthly_returnsSP500 <- "^GSPC" %>%
+  tq_get(get = "stock.prices", from = "2000-01-01", to = "2019-08-31") %>%
+  tq_transmute(adjusted, periodReturn, period = "monthly", col_rename = "returns SP500")
+monthly_returnsSP500
+```
+
+```{r}
+#calculate the rolling mean monthly
+
+rollmeanSP500 <- rollmean(monthly_returnsSP500[, "returns SP500"], 2)
+rollmeanSP500
+```
+
+```{r}
+vector <- c(rollmeanSP500)
+
+#2=good economy, 1=bad economy
+regime1or2 <-as.numeric(vector>0)+1
+regime1or2
+```
+
+
+```{r}
+SP500dates <- as.data.frame(monthly_returnsSP500$date)
+
+
+#regime 1 is bad market phase (1) and regime 2 is good market phase (2)
+data_frame <- data.frame("date" =SP500dates[2:236,], regime1or2)
+
+data_frame
+
+
+#convert it in xts format
+regime_xts <- data_frame %>%
+  data.frame[1] %>%
+   tk_xts(date_var = data_frame$date, silent = TRUE)
+regime_xts
+
+```
+
+
+
+```{r}
+stockselection <- c("AAPL", "MSFT", "AMZN", "JPM", "AMGN", "CSCO", "GILD", "MCD", "QCOM", "WMT")
+
+#Get the prices of the stocks to transmute it to returns
+stock.prices <- stockselection %>%
+  tq_get(get  = "stock.prices", from = "2000-01-01",to = "2018-08-31") %>%
+  group_by(symbol)
+
+#Create monthly returns
+stock.returns.monthly <- stock.prices %>%  
+  tq_transmute(select = adjusted,
+               mutate_fun = periodReturn,
+               period="monthly",
+               type="arithmetic",
+               col_rename = "Stock.returns"
+               )
+
+#make a tibble with dates and returns for all stocks
+#Make 10 columns (each for every stock) with the simple returns from adjusted prices and convert to xts (necessary for Portfolioanalytics)
+
+R <- pivot_wider(stock.returns.monthly,
+                                                names_from = symbol,
+                                                values_from = c(Stock.returns))%>% 
+  tk_xts(date_var = date, silent = TRUE)
+
+
+colnames(R) <- c("AAPL", "MSFT", "AMZN", "JPM", "AMGN", "CSCO", "GILD", "MCD", "QCOM", "WMT")
+funds <- colnames(R)
+
+#Amgen -bio technology
+#Gild - pharmacy
+#QCOM - tele communication 
+
+R %>% head()
+```
+
+#########ignore: old solution###########
+```{r}
+
+#' Here I just randomly samples values to create regime 1 or regime 2. In 
+#' practice, this could based on volatility or other regime switching models
+# 
+set.seed(123)
+regime <- xts(sample(1:2, nrow(R), replace=TRUE, prob=c(0.3, 0.7)), index(R))
+
+#Regimes are simply market periods with different parameters, such as good market phases (upswing) and bad (downturn). Regimes are different economic environments (e.g. good times and bad times). 
+# We want  a different portfolio for good times and for bad times (and maybe - as a third regime - for times that are uncertain but neither really good nor bad). --> 
+
+
+#here, they assign different dates to regime 1 or 2
+#there are more in regime 2 because prob. of regime 1 is 30% and of regime 2 is 70%
+
+regime
+```
+##################################################
+
+```{r}
+#' Construct portfolio for regime 1 - bad economy.
+#here, the first regime is considered with a risk approach (Mean-ES portfolio and other constraints)   --> we optimize ES
+
+#Es = Conditional Value at risk: considers losses that exceed the value-at-risk and determines their average amount. 
+
+port1 <- portfolio.spec(funds)
+port1 <- add.constraint(port1, "weight_sum", min_sum=0.99, max_sum=1.01)
+port1 <- add.constraint(port1, "box", min=0.05, max=0.5)
+port1 <- add.objective(port1, type="risk", name="ES", arguments=list(p=0.9))
+port1 <- add.objective(port1, type="risk_budget", name="ES", 
+                       arguments=list(p=0.9), max_prisk=0.5)
+
+```
+
+```{r}
+#' Construct portfolio for regime 2 - good economy.
+#here regime 2 is a regime based on standard investment with volatility - here we used the standard deviation --> we optimize Stdev
+
+port2 <- portfolio.spec(funds)
+port2 <- add.constraint(port2, "weight_sum", min_sum=0.99, max_sum=1.01)
+port2 <- add.constraint(port2, "box", min=0, max=0.6)
+port2 <- add.objective(port2, type="risk", name="StdDev")
+port2 <- add.objective(port2, type="risk_budget", name="StdDev", max_prisk=0.5)
+```
+
+```{r}
+#' Combine the portfolios.
+portfolios <- combine.portfolios(list(port1, port2))
+
+
+#' Now we construct the regime model and corresponding portfolios to use for
+#' each regime.
+# we merge the portfolios and the regimes (becauase we cannot merge every single portfolio with the regimes)
+
+regime.port <- regime.portfolios(regime_xts, portfolios)
+regime.port
+```
+
+
+
+```{r}
+#' This optimization should result in out portfolio for regime 2 (optimizing Stdev).
+opt1 <- optimize.portfolio(R, regime.port, 
+                           optimize_method="random", 
+                           search_size=2000, 
+                           trace=TRUE)
+opt1
+opt1$regime
+```
+
+```{r}
+#' This optimization should result in out portfolio for regime 1.
+opt2 <- optimize.portfolio(R[1:(nrow(R)-1)], regime.port, 
+                           optimize_method="DEoptim", 
+                           search_size=2000, 
+                           trace=TRUE)
+
+
+```
+
+```{r}
+opt2
+opt2$regime
+```
+
+
+```{r}
+#' Run optimization with rebalancing using our regime switching portfolio.
+opt.rebal <- optimize.portfolio.rebalancing(R, regime.port,
+                                            optimize_method="random", 
+                                            rebalance_on="quarters", 
+                                            training_period=130,
+                                            search_size=2000, 
+                                            trace=TRUE)
+
+#' The print and summary methods work the same as they do for optimizations 
+#' without regime switching.
+opt.rebal
+summary(opt.rebal)
+```
+
+
+```{r}
+#' We can extract which regime portfolio we optimized with at each rebalance date.  
+
+#if there are structural changes in the data series, maybe a date fits better in the other regime now
+lapply(opt.rebal$opt_rebalancing, function(x) x$regime)
+```
+
+
+```{r}
+#' Extract the optimal weights at each rebalance date.
+wt <- extractWeights(opt.rebal)
+wt
+```
+
+
+```{r}
+#' Extract the objective measures*.
+obj <- extractObjectiveMeasures(opt.rebal)
+str(obj)
+obj
+```
+
+
+```{r}
+# Extract the stats*.
+xt <- extractStats(opt.rebal)
+str(xt)
+```
+
+
+```{r}
+#' *
+#' Note that this returns a list of N elements for N regimes. We may have 
+#' different objectives and/or a different number of objectives which makes
+#' returning a single xts object difficult/
+
+#' Extract the optimal weights at each rebalance date.
+chart.Weights(opt.rebal, colorset=rainbow10equal)
+
+wt
+```
+
+```{r}
+#' Chart the risk contribution for regime 1
+# 
+chart.RiskBudget(opt.rebal, match.col="ES", risk.type="percentage", 
+                 regime=1, colorset=rainbow10equal)
+
+opt2
+```
+
+```{r}
+#' Chart the risk contribution for regime 2
+chart.RiskBudget(opt.rebal, match.col="StdDev", risk.type="percentage", 
+                 regime=2, colorset=rainbow10equal)
+
+opt1
+```
