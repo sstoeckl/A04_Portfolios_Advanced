@@ -13,21 +13,6 @@ pacman::p_load(tidyverse,tidyquant,PortfolioAnalytics,nloptr)
 
 For all exercises: Please use the Assignment-Forum to post your questions, I will try my best to help you along!
 
-## Exercise 1: Rebalancing
-
-Have a look at `vignette("ROI_vignette")` and the `optimize.portfolio.rebalancing` command. Use your dataset to compute 
-
-
-
-
-
-```{r load_packs}
-pacman::p_load(tidyverse,tidyquant,PortfolioAnalytics,nloptr)
-```
-
-**Please** remember to put your assignment solutions in `rmd` format using **many** chunks and putting readable text in between, similar to my examples given in Research Methods and Assignment 1! Also, each student has to select his own set of 10 stocks having data available as of `2000-01-01`. Select by Sharpe-ratio, dominance or any other method (e.g. matching your first name).
-
-For all exercises: Please use the Assignment-Forum to post your questions, I will try my best to help you along!
 
 ## Exercise 1: Rebalancing
 
