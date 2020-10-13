@@ -267,6 +267,13 @@ Check `vignette("custom_moments_objectives")` to implement a variety of robust c
 First, we get Data of our 10 Stocks. We use the same as in the previous assignment - all stocks are below are listed in the S&P500. 
 We create a vector which contains all stocks we want to observe. 
 Then, we get the stock prices from 2000-01-01 to 2020-09-30 and create monthly returns.
+
+Four data sources:
+-normal data --> stock.returns.monthly_xts_with_outliers
+-cleaned with return.clean --> stock.returns.monthly_xts
+-cleaned with cov.rob --> sigmarob
+-cleaned with shrink --> sigma.shrink
+
 ```{r}
 require(timetk)
 
@@ -338,11 +345,12 @@ init.port.maxq <- portfolio.spec(assets=colnames(stock.returns.monthly_xts),cate
 
 #init.port.maxq <- add.constraint(init.port.maxq, type = "box", min = 0, max = 1)
 init.port.maxq <- add.constraint(portfolio=init.port.maxq, type="full_investment")
-init.port.maxq <- add.constraint(portfolio=init.port.maxq, type="long_only")
+#init.port.maxq <- add.constraint(portfolio=init.port.maxq, type="long_only")
 
 #Portfolio with standard deviation as an objective
+#SD.port.maxq <- add.objective(portfolio=init.port.maxq, type="quadratic_utility", risk_aversion=4)
 SD.port.maxq <- add.objective(portfolio=init.port.maxq, type="return", name="mean")
-SD.port.maxq <- add.objective(portfolio=SD.port.maxq, type="risk", name="var", risk_aversion=0.25)
+SD.port.maxq <- add.objective(portfolio=SD.port.maxq, type="risk", name="var", risk_aversion=4)
 ```
 
 **function to estimate covariance matrix with cov.rob for minimum variance**
@@ -369,10 +377,19 @@ sigma.robust.shrink <- function(R){
     return(out)
 }
 sigma.shrink <- sigma.robust.shrink(stock.returns.monthly_xts)$sigmashrink
+sigma.shrink
 ```
 
 **Optimize portfolios**
 ```{r message=FALSE, warning=FALSE}
+
+opt.sd.minv.normal.outliers <- optimize.portfolio(stock.returns.monthly_xts_with_outliers, SD.port.minv, optimize_method="ROI", trace = TRUE)
+
+opt.sd.maxq.normal.outliers <- optimize.portfolio(stock.returns.monthly_xts_with_outliers, SD.port.maxq, optimize_method="ROI", trace = TRUE)
+
+opt.sd.minv.normal <- optimize.portfolio(stock.returns.monthly_xts, SD.port.minv, optimize_method="ROI", trace = TRUE)
+
+opt.sd.maxq.normal <- optimize.portfolio(stock.returns.monthly_xts, SD.port.maxq, optimize_method="ROI", trace = TRUE)
 
 opt.sd.minv <- optimize.portfolio(stock.returns.monthly_xts, SD.port.minv, optimize_method="ROI", momentFUN="sigma.robust", trace = TRUE)
 
@@ -390,6 +407,23 @@ sqrt(t(weights) %*% sigmarob %*% weights)
 extractObjectiveMeasures(opt.sd.minv)$StdDev
 opt.sd.minv
 ```
+***Plot the covariance matrix from the not modified data, including outliers***
+
+```{r}
+sigma.normal.outliers <- cov(stock.returns.monthly_xts_with_outliers)
+sigma.normal.outliers
+
+chart.Correlation(sigma.normal.outliers,histogram = TRUE)
+```
+***Plot the covariance matrix from the not modified data, without outliers (cleaned with return.clean)***
+
+```{r}
+sigma.normal <- cov(stock.returns.monthly_xts)
+sigma.normal
+
+chart.Correlation(sigma.normal,histogram = TRUE)
+```
+
 **Plot the covariance matrix from cov.rob**
 ```{r echo = FALSE}
 chart.Correlation(sigmarob, histogram = TRUE)
@@ -402,27 +436,51 @@ chart.Correlation(sigma.shrink, histogram = TRUE)
 ```
 **Plot the Portfolios**
 ```{r}
-plot(opt.sd.minv, risk.col="StdDev", return.col="mean", main="Minimum Variance Optimization", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.02))
+#minimum variance portfolio
+plot(opt.sd.minv.normal.outliers, risk.col="StdDev", return.col="mean", main="Minimum Variance Optimization - unmodified data with outliers", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.02))
 
+plot(opt.sd.minv.normal, risk.col="StdDev", return.col="mean", main="Minimum Variance Optimization - unmodified data without outliers", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.02))
+
+plot(opt.sd.minv, risk.col="StdDev", return.col="mean", main="Minimum Variance Optimization cov.rob", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.02))
 
 plot(opt.sd.minv.shrink, risk.col="StdDev", return.col="mean", main="Minimum Variance Optimization shrink", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.02))
 
-plot(opt.sd.maxq, risk.col="StdDev", return.col="mean", main="Quadratic Utility Optimization", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.05))
+#quadratic utility portfolio
+plot(opt.sd.maxq.normal.outliers, risk.col="StdDev", return.col="mean", main="Quadratic Utility Optimization - unmodified data with outliers", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.05))
 
+plot(opt.sd.maxq.normal, risk.col="StdDev", return.col="mean", main="Quadratic Utility Optimization - unmodified data without outliers", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.05))
+
+plot(opt.sd.maxq, risk.col="StdDev", return.col="mean", main="Quadratic Utility Optimization cov.rob", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.05))
 
 plot(opt.sd.maxq.shrink, risk.col="StdDev", return.col="mean", main="Quadratic Utility Optimization shrink", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.05))
 ```
-**Chart Efficient Frontiert for the minimum variance Portfolio**
+
+**Chart Efficient Frontier and weights for the minimum variance Portfolio**
 ```{r echo = FALSE}
-prt_eff_minv <- create.EfficientFrontier(R=stock.returns.monthly_xts, portfolio=SD.port.minv, type="mean-StdDev", match.col = "StdDev")
-chart.EfficientFrontier(prt_eff_minv, match.col="StdDev", type="b", rf=NULL, pch.assets = 1)
-chart.EF.Weights(prt_eff_minv, colorset=rainbow(n = length(stockselection)), match.col="StdDev", cex.lab = 1, main = "StdDev")
+
+#with outliers
+prt_eff_minv_normal_outliers <- create.EfficientFrontier(R=stock.returns.monthly_xts_with_outliers, portfolio=SD.port.minv, type="mean-StdDev", match.col = "StdDev")
+chart.EfficientFrontier(prt_eff_minv_normal_outliers, match.col="StdDev", type="b", rf=NULL, pch.assets = 1)
+chart.EF.Weights(prt_eff_minv_normal_outliers, colorset=rainbow(n = length(stockselection)), match.col="StdDev", cex.lab = 1, main = "StdDev")
+
+#without outliers
+prt_eff_minv_normal <- create.EfficientFrontier(R=stock.returns.monthly_xts, portfolio=SD.port.minv, type="mean-StdDev", match.col = "StdDev")
+chart.EfficientFrontier(prt_eff_minv_normal, match.col="StdDev", type="b", rf=NULL, pch.assets = 1)
+chart.EF.Weights(prt_eff_minv_normal, colorset=rainbow(n = length(stockselection)), match.col="StdDev", cex.lab = 1, main = "StdDev")
 ```
-**Chart Efficient Frontiert for the quadratic utility Portfolio**
+**Chart Efficient Frontier and weights for the quadratic utility Portfolio**
 ```{r echo = FALSE}
-prt_eff_maxq <- create.EfficientFrontier(R=stock.returns.monthly_xts, portfolio=SD.port.maxq, type="mean-StdDev", match.col = "StdDev")
-chart.EfficientFrontier(prt_eff_maxq, match.col="StdDev", type="b", rf=NULL, pch.assets = 1)
-chart.EF.Weights(prt_eff_maxq, colorset=rainbow(n = length(stockselection)), match.col="StdDev", cex.lab = 1, main = "StdDev")
+
+#with outliers
+prt_eff_maxq_normal_outliers <- create.EfficientFrontier(R=stock.returns.monthly_xts_with_outliers, portfolio=SD.port.maxq, type="mean-StdDev", match.col = "StdDev")
+chart.EfficientFrontier(prt_eff_maxq_normal_outliers, match.col="StdDev", type="b", rf=NULL, pch.assets = 1)
+chart.EF.Weights(prt_eff_maxq_normal_outliers, colorset=rainbow(n = length(stockselection)), match.col="StdDev", cex.lab = 1, main = "StdDev")
+
+#without outliers
+prt_eff_maxq_normal <- create.EfficientFrontier(R=stock.returns.monthly_xts, portfolio=SD.port.maxq, type="mean-StdDev", match.col = "StdDev")
+chart.EfficientFrontier(prt_eff_maxq_normal, match.col="StdDev", type="b", rf=NULL, pch.assets = 1)
+chart.EF.Weights(prt_eff_maxq_normal, colorset=rainbow(n = length(stockselection)), match.col="StdDev", cex.lab = 1, main = "StdDev")
+
 ```
 
 
