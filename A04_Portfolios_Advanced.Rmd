@@ -61,15 +61,16 @@ stocks.returns.xts <- stocks.returns%>%
 
 Have a look at `vignette("ROI_vignette")` and the `optimize.portfolio.rebalancing` command. Use your dataset to compute 
 
-
-### a) Maximizing Mean-Return (tangency portfolio)
+  add.objective(type="return", name="mean") %>%
+### a) Tangency Portfolio
 
 First we create portfolio, add constraints and add an objective.
 ```{r}
 portf_maxret <- portfolio.spec(assets=stocks.selection$symbol)%>%
   add.constraint(type="full_investment") %>%
   add.constraint(type="long_only") %>%
-  add.objective(type="return", name="mean")
+  add.objective(type="return", name="mean") %>%
+  add.objective(type="risk", name="StdDev")
 
 portf_maxret
 ```
@@ -79,14 +80,16 @@ portf_maxret
 Now we run the optimization.
 ```{r}
 opt_maxret <- optimize.portfolio(R=stocks.returns.xts, portfolio=portf_maxret,
-                                 optimize_method="ROI", trace=TRUE)
+                                 optimize_method="ROI",
+                                 maxSR=TRUE, 
+                                 trace=TRUE)
 opt_maxret
 ```
 Here we can see that we invest everythin into one stock, which is the NVIDIA Corporation.
 
 Now we plot the mu-sigma diagram and the weights.
 ```{r}
- plot(opt_maxret, chart.assets=TRUE, main="Maximum Return", 
+ plot(opt_maxret, chart.assets=TRUE, main="Tangency Portfolio", 
       xlim=c(0.05, 0.35), ylim=c(0,0.04))
 
 ```
@@ -308,29 +311,7 @@ chart.Weights(bt_qu4, main = "Rebalanced Weights Over Time",
               colorset=rainbow(n = length(stocks.selection$symbol)))
 ```
 
-## Comparing Portfolio Performance
 
-### Sigma and Mu of Portfolios
-Now we are going to make a simple mu-sigma plot of the portfolios to see if there is a dominated portfolio.
-```{r}
-sigma <- c(StdDev(portfolio.returns.maxret$Ra),
-           StdDev(portfolio.returns.minvar$Ra),
-           StdDev(portfolio.returns.qu$Ra),
-           StdDev(portfolio.returns.qu2$Ra))
-
-mu <- c(mean(portfolio.returns.maxret$Ra),
-        mean(portfolio.returns.minvar$Ra),
-        mean(portfolio.returns.qu$Ra),
-        mean(portfolio.returns.qu2$Ra))
-
-sigma.mu <- cbind(sigma,mu)
-
-sigma.mu
-```
-
-```{r}
-plot(sigma.mu)
-```
 As we can see here, there is no portfolio that is dominated by another portfolio.
 weights of the portfolios. Since we could not decide for a portfolio with the mu-sigma plot, we will compare all portfolios to a benchmark, in this case the S&P 500 index because all the stocks are part of this index, and try to evaluate the performances of each portfolio with the CAPM.
 
@@ -425,32 +406,28 @@ RaRb.qu2
 
 Now we will use the CAPM to evaluate the portfolios.
 
-CAPM MaxRet Portfolio
-```{r}
-RaRb.maxret %>%
-    tq_performance(Ra = Ra, Rb = Rb, 
-    performance_fun = table.CAPM)
-```
+CAPM 
 
-CAPM MinVar Portfolio
 ```{r}
-RaRb.minvar %>%
+CAPM.TP <-RaRb.maxret %>%
     tq_performance(Ra = Ra, Rb = Rb, 
     performance_fun = table.CAPM)
-```
 
-CAPM Quadratic Utility Portfolio risk_aversion=1
-```{r}
-RaRb.qu %>%
+CAPM.minvar <- RaRb.minvar %>%
     tq_performance(Ra = Ra, Rb = Rb, 
     performance_fun = table.CAPM)
-```
 
-CAPM Quadratic Utility Portfolio risk_aversion=5
-```{r}
-RaRb.qu2 %>%
+CAPM.qu <- RaRb.qu %>%
     tq_performance(Ra = Ra, Rb = Rb, 
     performance_fun = table.CAPM)
+
+CAPM.qu2 <- RaRb.qu2 %>%
+    tq_performance(Ra = Ra, Rb = Rb, 
+    performance_fun = table.CAPM)
+
+capm <- cbind (names,rbind(CAPM.TP,CAPM.minvar,CAPM.qu,CAPM.qu2))
+
+capm
 ```
 
 
@@ -474,34 +451,40 @@ Now we can plot profit and loss over time
 
 bs.portf.maxret <- cbind(portfolio.returns.maxret$Ra, baseline.returns.xts)
 
-charts.PerformanceSummary(bs.portf.maxret, main = "P/L Over Time MaxRet", )
+bs.portf <- cbind(baseline.returns.xts,portfolio.returns.maxret$Ra,
+                  portfolio.returns.minvar$Ra,
+                  portfolio.returns.qu$Ra,
+                  portfolio.returns.qu2$Ra)
+
+colnames(bs.portf) <- c("S&P500","Tangency Portfolio", "MinVar Portfolio", "QU RA=1 Portfolio", "QU RA=5 Portfolio")
+
+charts.PerformanceSummary(bs.portf, main = "P/L Over Time", )
 
 ```
+
+## Comparing Portfolio Performance
+
+### Sigma and Mu of Portfolios
 
 ```{r}
+sigma <- c(StdDev(portfolio.returns.maxret$Ra),
+           StdDev(portfolio.returns.minvar$Ra),
+           StdDev(portfolio.returns.qu$Ra),
+           StdDev(portfolio.returns.qu2$Ra))
 
-bs.portf.minvar <- cbind(portfolio.returns.minvar$Ra, baseline.returns.xts)
+mu <- c(mean(portfolio.returns.maxret$Ra),
+        mean(portfolio.returns.minvar$Ra),
+        mean(portfolio.returns.qu$Ra),
+        mean(portfolio.returns.qu2$Ra))
 
-charts.PerformanceSummary(bs.portf.minvar, main = "P/L Over Time Minvar", )
+names <- c("Tangency Portfolio", "MinVar","QU RA=1", "QU RA=5")
 
+sigma.mu <- cbind(names,sigma,mu)
+
+sigma.mu
 ```
 
-```{r}
 
-bs.portf.qu <- cbind(portfolio.returns.qu$Ra, baseline.returns.xts)
-
-charts.PerformanceSummary(bs.portf.qu, main = "P/L Over Time RA=1", )
-
-```
-
-
-```{r}
-
-bs.portf.qu2 <- cbind(portfolio.returns.qu2$Ra, baseline.returns.xts)
-
-charts.PerformanceSummary(bs.portf.qu2, main = "P/L Over Time RA=5", )
-
-```
 
 The selection of the portfolio depends on the investor. All our portfolios perfom better than the S&P 500 index but three of the portfolios are riskier than the index. The Minimum Variance Portfolio has a positiv alpha and a beta under 1 so it is better in two categories, so we choose the Minimum Variance Portfolio, even though the other 3 portfolios have a higher alpha.
 
