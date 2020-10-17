@@ -203,7 +203,6 @@ chart.Weights(bt_minvar2, main = "Rebalanced Weights Over Time", colorset=rainbo
 First we create the portfolio and add constraints.
 ```{r}
 portf_maxqua <- portfolio.spec(assets= stocks.selection$symbol) %>%
-  add.constraint(type = "full_investment") %>%
   add.constraint(type = "long_only")
 portf_maxqua
 ```
@@ -425,6 +424,8 @@ CAPM.qu2 <- RaRb.qu2 %>%
     tq_performance(Ra = Ra, Rb = Rb, 
     performance_fun = table.CAPM)
 
+names <- c("Tangency Portfolio", "MinVar","QU RA=1", "QU RA=5")
+
 capm <- cbind (names,rbind(CAPM.TP,CAPM.minvar,CAPM.qu,CAPM.qu2))
 
 capm
@@ -476,8 +477,6 @@ mu <- c(mean(portfolio.returns.maxret$Ra),
         mean(portfolio.returns.minvar$Ra),
         mean(portfolio.returns.qu$Ra),
         mean(portfolio.returns.qu2$Ra))
-
-names <- c("Tangency Portfolio", "MinVar","QU RA=1", "QU RA=5")
 
 sigma.mu <- cbind(names,sigma,mu)
 
