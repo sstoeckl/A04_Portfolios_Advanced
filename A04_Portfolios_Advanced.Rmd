@@ -908,232 +908,146 @@ chart.RiskBudget(opt.rebal, match.col="StdDev", risk.type="percentage",
 
 Now we are going to estimate the Portfolio Input Parameters with the Single-Index Model. Use your ten assets and additionally choose the S&P500 as index (same returns etc).
 
-### Get the packages 
-
-```{r echo=FALSE}
- install.packages("fEcofin", repos="http://R-Forge.R-project.org")
-
- library(fEcofin)
- library(fPortfolio)
-
-```
+Correction:
 
 
- Now we are going to estimate the Portfolio Input Parameters with the Single-Index Model. Use your ten assets and additionally choose the S&P500 as index (same returns etc).
 
 ```{r}
-
- stockselection_4 <- c("MMM", "AAPL", "WMT", "KO", "ADBE", "MCD", "PEP", "AMZN", "YUM", "^GSPC")
- stockselection_4
-
- # Presettings
- n <- length(stockselection_4)
-
- #Get the prices of the stocks
- stock.prices_4 <- stockselection_4 %>%
-   tq_get(get  = "stock.prices", from = "2015-07-06",to = Sys.Date( )) %>% #First trade day of KHC
-   group_by(symbol)
-
- # Output the first two entries of each stock!
- stock.prices_4 %>% slice(1:2) 
- stock.prices_4 %>%
-   ggplot(aes(x = date, y = adjusted, color = symbol)) +
-   geom_line() +
-   ggtitle("Price chart for all stocks - all in one")
-
- # Plotting the stock prices in each frame
- stock.prices_4 %>%
-   ggplot(aes(x = date, y = adjusted)) +
-   geom_line() +
-   facet_wrap(~symbol, scales = "free_y") +
-   theme_classic() +
-   labs(x = "Date", y = "Price") +
-   ggtitle("Price chart all stocks - in each frame") 
-
-
+stockselection_4 <- c("MMM", "AAPL", "WMT", "KO", "ADBE", "MCD", "PEP", "AMZN", "YUM", "K", "^GSPC")
+#Get the prices of the stocks
+stock.prices_4 <- stockselection_4 %>%
+  tq_get(get  = "stock.prices", from = "2015-01-01",to = "2020-10-01") %>%
+  group_by(symbol)
+stock.returns.monthly_4 <- stock.prices_4 %>%  
+  tq_transmute(select = adjusted,
+               mutate_fun = periodReturn,
+               period="monthly",
+               type="arithmetic",
+               col_rename = "Stock.returns")
+stock.returns.monthly_xts_4 <- pivot_wider(stock.returns.monthly_4,names_from = symbol, values_from = c(Stock.returns))%>%
+  tk_xts(date_var = date, silent = TRUE)
 ```
 
-```{r}
-
- # Create monthly returns by the tq_transmute() = adds new variables to an existing tibble;
- stock.returns.monthly_4 <- stock.prices_4 %>%  
-   tq_transmute(select = adjusted,
-                mutate_fun = periodReturn,
-                period="monthly",
-                type="arithmetic",
-                col_rename = "Stock.returns")
-
- # Output the first two entries of each stock!
- stock.returns.monthly_4 %>% slice(1:2) 
-
- # Make 10 columns (each for every stock) with the simple returns from adjusted prices and convert to xts
- stock.returns.monthly_xts_4 <- pivot_wider(stock.returns.monthly_4,
-                                                 names_from = symbol,
-                                                 values_from = c(Stock.returns))%>%
-    tk_xts(date_var = date, silent = TRUE)
-
- # Output the first entries (simple returns from adjusted prices) of each stock!
- stock.returns.monthly_xts_4[1]
-
- # Plotting a performance summary chart 
- charts.PerformanceSummary(stock.returns.monthly_xts_4, 
-                           main="Performance summary")
-
-```
 
 a) Regress all stocks on the index. Show alpha, beta and residual variance. Calculate systematic and firm-specific risk. Are there any significant alphas? (You should double check with the appropriate `PerformanceAnalytics` Functions)
 
+Regress all stocks on the index
 ```{r}
-
- #Regress all stocks on the index
- alpha.Stocks <- CAPM.alpha(Ra = stock.returns.monthly_xts_4[,-n], Rb = stock.returns.monthly_xts_4[,n], Rf = 0)
- beta.Stocks <- CAPM.beta(Ra = stock.returns.monthly_xts_4[,-n], Rb = stock.returns.monthly_xts_4[,n], Rf = 0)
- StdDev.Index <- StdDev(R = stock.returns.monthly_xts_4[,n],
-                    clean = "none",
-                    method = "pearson")
-
- lm(stock.returns.monthly_xts_4[,-n] ~ stock.returns.monthly_xts_4[,n])
-
- for(i in 1:n) {
- plot.default(x = stock.returns.monthly_xts_4[, n], 
-             y = stock.returns.monthly_xts_4[, i], 
-             main = stockselection_4[i], 
-             xlab = "Index Returns", 
-             ylab = "Stock Returns", 
-             abline(lm(stock.returns.monthly_xts_4[, i] ~ stock.returns.monthly_xts_4[, n])))
- }
-
- #Calculate systematic (Market-Specific) Risk by mulitplying Variance (StdDev^2) of the S&P500 and the Beta^2 of each stock
- sys.risk <- SystematicRisk(Ra = stock.returns.monthly_xts_4[,-n], Rb = stock.returns.monthly_xts_4[,n], Rf = 0)
- sys.risk
-
- #Calculate Firm-specific Risk / Residual Variance
- firm.specific.risk <- SpecificRisk(Ra = stock.returns.monthly_xts_4[,-n], Rb = stock.returns.monthly_xts_4[,n], Rf = 0)
- firm.specific.risk
-
- #Summary
- summary.SFM <- table.SFM(Ra = stock.returns.monthly_xts_4[,-n], Rb = stock.returns.monthly_xts_4[,n], scale = NA, Rf = 0, digits = 6)
- summary.SFM
-
+alpha.Stocks <- CAPM.alpha(Ra = stock.returns.monthly_xts_4[,-11], Rb = stock.returns.monthly_xts_4[,11], Rf = 0)
+beta.Stocks <- CAPM.beta(Ra = stock.returns.monthly_xts_4[,-11], Rb = stock.returns.monthly_xts_4[,11], Rf = 0)
+StdDev.Index <- StdDev(R = stock.returns.monthly_xts_4[,11],
+                   clean = "none",
+                   method = "pearson")
+lm(stock.returns.monthly_xts_4[,-11] ~ stock.returns.monthly_xts_4[,11])
+plot.default(x = stock.returns.monthly_xts_4[, 11], y = stock.returns.monthly_xts_4[, 1], main = "3M Regression", xlab = "Index Returns", ylab = "Stock Returns", abline(lm(stock.returns.monthly_xts_4[, 1] ~ stock.returns.monthly_xts_4[, 11])))
+plot.default(x = stock.returns.monthly_xts_4[, 11], y = stock.returns.monthly_xts_4[, 2], main = "Apple Regression", xlab = "Index Returns", ylab = "Stock Returns", abline(lm(stock.returns.monthly_xts_4[, 2] ~ stock.returns.monthly_xts_4[, 11])))
+plot.default(x = stock.returns.monthly_xts_4[, 11], y = stock.returns.monthly_xts_4[, 3], main = "Walmart Regression", xlab = "Index Returns", ylab = "Stock Returns", abline(lm(stock.returns.monthly_xts_4[, 3] ~ stock.returns.monthly_xts_4[, 11])))
+plot.default(x = stock.returns.monthly_xts_4[, 11], y = stock.returns.monthly_xts_4[, 4], main = "Coca-Cola Regression", xlab = "Index Returns", ylab = "Stock Returns", abline(lm(stock.returns.monthly_xts_4[, 4] ~ stock.returns.monthly_xts_4[, 11])))
+plot.default(x = stock.returns.monthly_xts_4[, 11], y = stock.returns.monthly_xts_4[, 5], main = "Adobe Regression", xlab = "Index Returns", ylab = "Stock Returns", abline(lm(stock.returns.monthly_xts_4[, 5] ~ stock.returns.monthly_xts_4[, 11])))
+plot.default(x = stock.returns.monthly_xts_4[, 11], y = stock.returns.monthly_xts_4[, 6], main = "McDonald´s Regression", xlab = "Index Returns", ylab = "Stock Returns", abline(lm(stock.returns.monthly_xts_4[, 6] ~ stock.returns.monthly_xts_4[, 11])))
+plot.default(x = stock.returns.monthly_xts_4[, 11], y = stock.returns.monthly_xts_4[, 7], main = "Pepsi", xlab = "Index Returns", ylab = "Stock Returns", abline(lm(stock.returns.monthly_xts_4[, 7] ~ stock.returns.monthly_xts_4[, 11])))
+plot.default(x = stock.returns.monthly_xts_4[, 11], y = stock.returns.monthly_xts_4[, 8], main = "Amazon", xlab = "Index Returns", ylab = "Stock Returns", abline(lm(stock.returns.monthly_xts_4[, 8] ~ stock.returns.monthly_xts_4[, 11])))
+plot.default(x = stock.returns.monthly_xts_4[, 11], y = stock.returns.monthly_xts_4[, 9], main = "YUM! Brands Regression", xlab = "Index Returns", ylab = "Stock Returns", abline(lm(stock.returns.monthly_xts_4[, 9] ~ stock.returns.monthly_xts_4[, 11])))
+plot.default(x = stock.returns.monthly_xts_4[, 11], y = stock.returns.monthly_xts_4[, 10], main = "Kellogg Company Regression", xlab = "Index Returns", ylab = "Stock Returns", abline(lm(stock.returns.monthly_xts_4[, 10] ~ stock.returns.monthly_xts_4[, 11])))
 ```
+Calculate systematic (Market-Specific) Risk by mulitplying Variance (StdDev^2) of the S&P500 and the Beta^2 of each stock
+```{r}
+sys.risk <- SystematicRisk(Ra = stock.returns.monthly_xts_4[,-11], Rb = stock.returns.monthly_xts_4[,11], Rf = 0)
+sys.risk
+```
+Calculate Firm-specific Risk / Residual Variance
+```{r}
+firm.specific.risk <- SpecificRisk(Ra = stock.returns.monthly_xts_4[,-11], Rb = stock.returns.monthly_xts_4[,11], Rf = 0)
+firm.specific.risk
+```
+Summary
+```{r}
+summary.SFM <- table.SFM(Ra = stock.returns.monthly_xts_4[,-11], Rb = stock.returns.monthly_xts_4[,11], scale = NA, Rf = 0, digits = 6)
+summary.SFM
+```
+
 
 b) Extract the betas and calculate systematic and unsystematic risk, derive the whole covariance matrix. To do this you can use _CH15_Factor_Modfels_for_Asset_Returns.pdf (15.3.1)_ and the code
 implemented in the function sharpeFactorEstimator that you find [here](http://financewithr.blogspot.com/2013/06/portfolio-optimization-using-single.html) (please do not just copy everything, but try to understand what you are doing, e.g. check why and if G.hat has the same values as found by the multivariate regression).
 
+
+
+Calculate Beta of Portfolio by average each stocks beta
 ```{r}
-
-
- #Calculate Beta of Portfolio by average each stocks beta
- beta.portfolio <- mean(beta.Stocks)
- beta.portfolio
-
- #Calculate systematic (Market-Specific) Risk of portfolio
- sys.risk.portfolio <- mean(sys.risk)
- sys.risk.portfolio
-
- #Calculate unsystematic risk by calculating the mean of the firm-specific risk
- unsys.risk.portfolio <- mean(firm.specific.risk)
- unsys.risk.portfolio
-
- #Calculate Covariance Matrix
- stock.returns.monthly_data <- as.data.frame((stock.returns.monthly_xts_4))
- head(stock.returns.monthly_data)
-
- returns <- as.timeSeries(stock.returns.monthly_data[,-n])
- factors <- as.vector(as.timeSeries(stock.returns.monthly_data)[,n])
-
- names(data)
- data <- returns
- attr(data, "factors") <- factors
- nScenarios <- nrow(data)
-
- X.mat <- cbind(rep(1, times=nScenarios), factors)
-
- G.hat <- solve(qr(X.mat), data) #G.hat is alpha
-
- beta.hat <- G.hat[2, ] #is beta
-
- eps.hat <- data - X.mat %*% G.hat
-
- diagD.hat <- diag(crossprod(eps.hat) / (nScenarios-2))
-
- cov.si = var(factors)*(beta.hat%o%beta.hat) + diag(diagD.hat)
-
- cov.si
-
+beta.portfolio <- mean(beta.Stocks)
+beta.portfolio
 ```
+
+Calculate systematic (Market-Specific) Risk of portfolio
+```{r}
+sys.risk.portfolio <- mean(sys.risk)
+sys.risk.portfolio
+```
+
+Calculate unsystematic risk by calculating the mean of the firm-specific risk
+```{r}
+unsys.risk.portfolio <- mean(firm.specific.risk)
+unsys.risk.portfolio
+```
+
+Calculate Covariance Matrix
+```{r}
+stock.returns.monthly_data <- as.data.frame((stock.returns.monthly_xts_4))
+data(stock.returns.monthly_data)
+returns <- as.timeSeries(stock.returns.monthly_data[,-11])
+factors <- as.vector(as.timeSeries(stock.returns.monthly_data)[,11])
+names(data)
+data <- returns
+attr(data, "factors") <- factors
+nScenarios <- nrow(data)
+X.mat <- cbind(rep(1, times=nScenarios), factors)
+G.hat <- solve(qr(X.mat), data) #G.hat is alpha
+beta.hat <- G.hat[2, ] #is beta
+eps.hat <- data - X.mat %*% G.hat
+diagD.hat <- diag(crossprod(eps.hat) / (nScenarios-2))
+cov.si = var(factors)*(beta.hat%o%beta.hat) + diag(diagD.hat)
+cov.si
+```
+
 
 c) Now use the _custom-moments_ functions from Exercise 2 to implement the single-factor model into the portfolio optimization framework and plot the efficient frontier using the parameters estimated by the single factor model next to the EF of the full-covariance model. Calculate MVP, TP etc. and work out the differences in weights, portfolio return and portfolio risk.
 
-```{r}
-
- #Function to implement single-factor model into the portfolio optimization framework
-
- returns <- as.timeSeries(stock.returns.monthly_xts_4)
- names(data)
- data <- returns[, -c(n)]
- factors <- returns[, n]
- attr(data, "factors") <- factors
-
- # Sharpe's Single Index Factor Model:
- sharpeFactorEstimator <- 
- function(x, spec=NULL, ...)
- {
-     # Sharpe Single Index Model:
-     data <- getDataPart(x)
-     factors <- attr(x, "factors")
-     nScenarios <- nrow(data)
-     X.mat <- cbind(rep(1, times=nScenarios), factors)
-     G.hat <- solve(qr(X.mat), data)
-     beta.hat <- G.hat[2, ]
-     eps.hat <- data - X.mat %*% G.hat
-     diagD.hat <- diag(crossprod(eps.hat) / (nScenarios-2))
-     mu <- G.hat[1, ] + G.hat[2, ] * colMeans(factors)  
-     Sigma <- var(factors)[[1]] * (beta.hat %o% beta.hat) + diag(diagD.hat)
-     
-     # Return Value:
-     list(mu = mu, Sigma = Sigma)
- }
-
- spec <- portfolioSpec()
- setEstimator(spec) <- "sharpeFactorEstimator"
- sharpe <- portfolioFrontier(data, spec)
-
- #Chart the efficient frontier using the parameters estimated by the single factor model
- sharpe_1 <- portfolioFrontier(data)
- tailoredFrontierPlot(sharpe_1)
- points(frontierPoints(sharpe), col = "steelblue")
-
-
- #Chart Efficient Frontier minimum variance
- prt_eff_minv <- create.EfficientFrontier(R=stock.returns.monthly_xts_4, portfolio=SD.port.minv, type="mean-StdDev", match.col = "StdDev")
- chart.EfficientFrontier(prt_eff_minv, match.col="StdDev", type="b", rf=NULL, pch.assets = 1)
-
-```
-
- Calculate MVP, TP etc. and work out the differences in weights, portfolio return and portfolio risk.
 
 ```{r}
-
- #weights, portfolio return and portfolio risk of MVP
- opt.sd.minv.shrink
- plot(opt.sd.minv.shrink, risk.col="StdDev", return.col="mean", main="Minimum Variance Optimization shrink", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(0,0.02)) 
-
-
- #weights, portfolio return and portfolio risk of QUP
- opt.sd.maxq.shrink
- plot(opt.sd.maxq.shrink, risk.col="StdDev", return.col="mean", main="Quadratic Utility Optimization shrink", chart.assets=TRUE, xlim=c(0, 0.2), ylim=c(-0.08,0.05))
-
-
- #weights, portfolio return and portfolio risk of tangency portfolio (Highest risk/return ratio)
- weight_tp_sharpe <- sharpe_1@portfolio@portfolio[["weights"]][26, ]
- return_tp_sharpe <- sharpe_1@portfolio@portfolio[["targetReturn"]][26, ]
- risk_tp_sharpe <- sharpe_1@portfolio@portfolio[["targetRisk"]][26, ]
-
- weight_tp_sharpe
- return_tp_sharpe
- risk_tp_sharpe
-
-
+#Function to implement single-factor model into the portfolio optimization framework
+data(stock.returns.monthly_xts_4)
+returns <- as.timeSeries(stock.returns.monthly_xts_4)
+names(data)
+data <- returns[, -c(11)]
+factors <- returns[, 11]
+attr(data, "factors") <- factors
+# Sharpe's Single Index Factor Model:
+sharpeFactorEstimator <- 
+function(x, spec=NULL, ...)
+{
+    # Sharpe Single Index Model:
+    data <- getDataPart(x)
+    factors <- attr(x, "factors")
+    nScenarios <- nrow(data)
+    X.mat <- cbind(rep(1, times=nScenarios), factors)
+    G.hat <- solve(qr(X.mat), data)
+    beta.hat <- G.hat[2, ]
+    eps.hat <- data - X.mat %*% G.hat
+    diagD.hat <- diag(crossprod(eps.hat) / (nScenarios-2))
+    mu <- G.hat[1, ] + G.hat[2, ] * colMeans(factors)  
+    Sigma <- var(factors)[[1]] * (beta.hat %o% beta.hat) + diag(diagD.hat)
+    
+    # Return Value:
+    list(mu = mu, Sigma = Sigma)
+}
+spec <- portfolioSpec()
+setEstimator(spec) <- "sharpeFactorEstimator"
+sharpe <- portfolioFrontier(data, spec)
+#Chart the efficient frontier using the parameters estimated by the single factor model
+sharpe_1 <- portfolioFrontier(data)
+tailoredFrontierPlot(sharpe_1)
+points(frontierPoints(sharpe), col = "steelblue")
+#Chart Efficient Frontier minimum variance
+chart.EfficientFrontier(prt_eff_minv, match.col="StdDev", type="b", rf=NULL, pch.assets = 1)
 ```
 
