@@ -63,14 +63,14 @@ stocks.returns.xts
 a) Mean-Return (tangency portfolio)
 
 
-
 Create Portfolio Object, add constraints, add objective
 
 ```{r}
 portf_maxret <- portfolio.spec(assets=stocks.selection$symbol)%>%
   add.constraint(type="full_investment") %>%
   add.constraint(type="long_only") %>%
-  add.objective(type="return", name="mean")
+  add.objective(type="return", name="mean") %>%
+  add.objective(type="risk", name="StdDev")
 portf_maxret
 ```
 
@@ -80,14 +80,16 @@ Run the optimization
 ```{r}
 
 opt_maxret <- optimize.portfolio(R=stocks.returns.xts, portfolio=portf_maxret,
-                                 optimize_method="ROI", trace=TRUE)
+                                 optimize_method="ROI", 
+                                 maxSR=TRUE, 
+                                 trace=TRUE)
 opt_maxret
 
 ```
 
 ```{r}
 
-plot(opt_maxret, chart.assets=TRUE, main="Maximum Return", 
+plot(opt_maxret, chart.assets=TRUE, main="Tangency Portfolio", 
       xlim=c(0.05,0.35), ylim=c(0,0.04))
 
 
@@ -142,7 +144,8 @@ bt_maxret2
 
 ```
 ```{r}
-chart.Weights(bt_maxret2, main = "Rebalanced Weights Over Time",
+
+chart.Weights(bt_maxret2, main= "Rebalanced Weights Over Time",
               colorset=rainbow(n = length(stocks.selection$symbol)))
 ```              
 
@@ -218,7 +221,6 @@ c) Maximum Quadratic Utility Portfolios
 ```{r}
 
 portf_maxqua <- portfolio.spec(assets= stocks.selection$symbol) %>%
-  add.constraint(type = "full_investment") %>%
   add.constraint(type = "long_only")
 portf_maxqua
 ```
@@ -420,38 +422,43 @@ RaRb.minvar
 RaRb.qu 
 RaRb.qu2 
 ```
-CAPM MaxRet Portfolio
-
 ```{r}
-RaRb.maxret %>%
+
+names <- c("Tangency Portfolio", "MinVar Portfolio", "QU Portfolio RA=1", "QU Portfolio RA=5")
+
+
+CAPM.tp <- RaRb.maxret %>%
     tq_performance(Ra = Ra, Rb = Rb, 
     performance_fun = table.CAPM)
+
+CAPM.minvar <- RaRb.minvar %>%
+    tq_performance(Ra = Ra, Rb = Rb, 
+    performance_fun = table.CAPM)
+
+CAPM.qu <- RaRb.qu %>%
+    tq_performance(Ra = Ra, Rb = Rb, 
+    performance_fun = table.CAPM)
+
+CAPM.qu2 <- RaRb.qu2 %>%
+    tq_performance(Ra = Ra, Rb = Rb, 
+    performance_fun = table.CAPM)
+
+
+CAPM.tp
+CAPM.minvar
+CAPM.qu
+CAPM.qu2
+```
+
+```{r}
+
+CAPM <- rbind (names, rbind(CAPM.tp,CAPM.minvar,CAPM.qu,CAPM.qu2))
+
+CAPM
+
 ```
 
 
-CAPM MinVar Portfolio
-
-```{r}
-RaRb.minvar %>%
-    tq_performance(Ra = Ra, Rb = Rb, 
-    performance_fun = table.CAPM)
-```
-
-CAPM Quadratic Utility Portfolio risk_aversion=1
-
-```{r}
-RaRb.qu %>%
-    tq_performance(Ra = Ra, Rb = Rb, 
-    performance_fun = table.CAPM)
-```
-
-CAPM Quadratic Utility Portfolio risk_aversion=5
-
-```{r}
-RaRb.qu2 %>%
-    tq_performance(Ra = Ra, Rb = Rb, 
-    performance_fun = table.CAPM)
-```
 ### Visualizing Returns of Portfolios and baseline
 
 Baseline Returns in xts format
@@ -461,36 +468,25 @@ baseline.returns.xts <- baseline.returns%>%
                       tk_xts(date_var = date, silent = TRUE)
 
 baseline.returns.xts
+
 ```
+
 Profit and Loss over time 
 ```{r}
 
-bs.portf.maxret <- cbind(portfolio.returns.maxret$Ra, baseline.returns.xts)
+bs.portf <- cbind(portfolio.returns.maxret$Ra,
+      portfolio.returns.minvar$Ra,
+      portfolio.returns.qu$Ra,
+      portfolio.returns.qu2$Ra,
+      baseline.returns.xts)
 
-charts.PerformanceSummary(bs.portf.maxret, main = "P/L Over Time MaxRet", )
 
-```
-```{r}
 
-bs.portf.minvar <- cbind(portfolio.returns.minvar$Ra, baseline.returns.xts)
-
-charts.PerformanceSummary(bs.portf.minvar, main = "P/L Over Time Minvar", )
-
-```
-```{r}
-
-bs.portf.qu <- cbind(portfolio.returns.qu$Ra, baseline.returns.xts)
-
-charts.PerformanceSummary(bs.portf.qu, main = "P/L Over Time", )
+charts.PerformanceSummary(bs.portf, main = "P/L Over Time", )
 
 ```
-```{r}
 
-bs.portf.qu2 <- cbind(portfolio.returns.qu2$Ra, baseline.returns.xts)
 
-charts.PerformanceSummary(bs.portf.qu2, main = "P/L Over Time", )
-
-```
 
 
 checking for a variety of constraints (constraints that can be computed with the `ROI`-solver) and different rebalancing periods (as well as rolling windows/training periods) to find, what might deliver you the best portfolios performance (use appropriate statistics to decide on that).
